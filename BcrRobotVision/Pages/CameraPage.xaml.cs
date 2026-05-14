@@ -96,19 +96,20 @@ namespace BcrRobotVision.Pages
 
         private int _activeMaterialNo = 0;
         private readonly string _imageRootFolder = @"D:\BcrRobotVisionData\InspectionImages";
+        private readonly string _historyImageFolderName = "SourceImages";
 
-        // PLC触发拍照后，按时间戳保存完整素材图，不覆盖旧图。
-        // 这里主要用于给HALCON算法改造提供原始素材。
+        // 给HALCON算法使用的“当前图”目录：每次只保留CurrentImage.tiff。
+        // 这样算法入口稳定，不会因为目录里有多张图片而拿错。
         private readonly string _plcCurrentImageFolder = @"D:\BcrRobotVisionData\HalconCurrentImage";
         private readonly string _plcCurrentImagePath = @"D:\BcrRobotVisionData\HalconCurrentImage\CurrentImage.tiff";
         private string _lastSavedCurrentImagePath = "";
 
-        // 确保素材图保存目录可用。这里先检查盘符是否存在，避免现场机器没有D盘时报异常。
+        // 确保HALCON当前图目录和历史素材目录可用。这里先检查盘符是否存在，避免现场机器没有D盘时报异常。
         private bool EnsureCurrentImageFolder()
         {
             try
             {
-                string? drive = Path.GetPathRoot(_plcCurrentImageFolder);
+                string? drive = Path.GetPathRoot(_imageRootFolder);
 
                 if (string.IsNullOrWhiteSpace(drive) || !Directory.Exists(drive))
                 {
@@ -118,10 +119,13 @@ namespace BcrRobotVision.Pages
                 }
 
                 Directory.CreateDirectory(_plcCurrentImageFolder);
+                Directory.CreateDirectory(GetTodayHistoryImageFolder());
 
-                txtSaveFolder.Text = $"HALCON当前图片目录：{_plcCurrentImageFolder}";
+                txtSaveFolder.Text =
+                    $"HALCON当前图目录：{_plcCurrentImageFolder}\n历史素材目录：{GetTodayHistoryImageFolder()}";
 
-                AppendLog($"图片目录已确认：{_plcCurrentImageFolder}");
+                AppendLog($"HALCON当前图目录已确认：{_plcCurrentImageFolder}");
+                AppendLog($"历史素材目录已确认：{GetTodayHistoryImageFolder()}");
 
                 return true;
             }
@@ -137,11 +141,10 @@ namespace BcrRobotVision.Pages
         public CameraPage()
         {
             InitializeComponent();
-            txtSaveFolder.Text = $"HALCON当前图片目录：{_plcCurrentImageFolder}";
+            txtSaveFolder.Text =
+                $"HALCON当前图目录：{_plcCurrentImageFolder}\n历史素材目录：{GetTodayHistoryImageFolder()}";
             EnsureCurrentImageFolder();
 
-
-            txtSaveFolder.Text = $"图片保存目录：{Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "InspectionImages")}";
 
             Init3DView();
 
@@ -215,12 +218,12 @@ namespace BcrRobotVision.Pages
 
 
         /*
-         * 保存PLC触发后的完整素材图。
+         * 保存PLC触发后的完整图像。
          *
          * 注意：
-         * 1. 文件名带时间戳，避免覆盖旧图，方便连续采集多张素材。
-         * 2. 优先使用HALCON real图保存tiff，保留原始高度数据。
-         * 3. 如果HALCON写图失败，则退回保存界面显示用的灰度高度图，至少保证现场能拿到图片。
+         * 1. 历史素材目录：按时间戳保存多张图，用于后续改HALCON算法。
+         * 2. HALCON当前图目录：每次覆盖CurrentImage.tiff，保证算法固定读取唯一当前图。
+         * 3. 返回值是HALCON当前图路径，也就是后续算法实际读取的路径。
          */
         private string SaveCurrentImageForHalcon(HObject halconImage, BitmapSource? depthBitmap)
         {
@@ -229,41 +232,32 @@ namespace BcrRobotVision.Pages
                 if (!EnsureCurrentImageFolder())
                     return "";
 
-                string currentImagePath = Path.Combine(
-                    _plcCurrentImageFolder,
+                string historyImagePath = Path.Combine(
+                    GetTodayHistoryImageFolder(),
                     $"CurrentImage_{DateTime.Now:yyyyMMdd_HHmmss_fff}.tiff");
 
-                try
+                bool historySaved = TrySaveHalconOrBitmapImage(
+                    halconImage,
+                    depthBitmap,
+                    historyImagePath,
+                    "历史素材图");
+
+                bool currentSaved = TrySaveHalconOrBitmapImage(
+                    halconImage,
+                    depthBitmap,
+                    _plcCurrentImagePath,
+                    "HALCON当前图");
+
+                if (!historySaved)
+                    AppendLog("历史素材图保存失败，但不影响HALCON当前图流程");
+
+                if (currentSaved)
                 {
-                    HOperatorSet.WriteImage(halconImage, "tiff", 0, currentImagePath);
-
-                    if (File.Exists(currentImagePath))
-                    {
-                        _lastSavedCurrentImagePath = currentImagePath;
-                        AppendLog($"当前HALCON图片已保存：{currentImagePath}");
-                        return currentImagePath;
-                    }
-
-                    AppendLog("HALCON写图后未发现文件，准备使用界面图兜底保存");
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"HALCON原始图保存失败：{ex.Message}");
-                }
-
-                if (depthBitmap != null)
-                {
-                    SaveBitmapSourceAsTiff(depthBitmap, currentImagePath);
-
-                    if (File.Exists(currentImagePath))
-                    {
-                        _lastSavedCurrentImagePath = currentImagePath;
-                        AppendLog($"当前高度图已保存：{currentImagePath}");
-                        return currentImagePath;
-                    }
+                    _lastSavedCurrentImagePath = _plcCurrentImagePath;
+                    return _plcCurrentImagePath;
                 }
 
-                AppendLog("保存当前图片失败：halconImage和depthBitmap都没有成功写入");
+                AppendLog("保存HALCON当前图失败：halconImage和depthBitmap都没有成功写入");
                 return "";
             }
             catch (Exception ex)
@@ -271,6 +265,55 @@ namespace BcrRobotVision.Pages
                 AppendLog($"保存当前图片异常：{ex.Message}");
                 MessageBox.Show($"保存当前图片异常：{ex.Message}");
                 return "";
+            }
+        }
+
+        private bool TrySaveHalconOrBitmapImage(
+            HObject halconImage,
+            BitmapSource? depthBitmap,
+            string imagePath,
+            string imageName)
+        {
+            try
+            {
+                string? folder = Path.GetDirectoryName(imagePath);
+                if (!string.IsNullOrWhiteSpace(folder))
+                    Directory.CreateDirectory(folder);
+
+                try
+                {
+                    HOperatorSet.WriteImage(halconImage, "tiff", 0, imagePath);
+
+                    if (File.Exists(imagePath))
+                    {
+                        AppendLog($"{imageName}已保存：{imagePath}");
+                        return true;
+                    }
+
+                    AppendLog($"{imageName} HALCON写图后未发现文件，准备使用界面图兜底保存");
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"{imageName} HALCON原始图保存失败：{ex.Message}");
+                }
+
+                if (depthBitmap != null)
+                {
+                    SaveBitmapSourceAsTiff(depthBitmap, imagePath);
+
+                    if (File.Exists(imagePath))
+                    {
+                        AppendLog($"{imageName}高度图已保存：{imagePath}");
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"{imageName}保存异常：{ex.Message}");
+                return false;
             }
         }
 
@@ -443,18 +486,8 @@ namespace BcrRobotVision.Pages
 
                 _lastPhoto1Signal = false;
 
-                string todayFolder = Path.Combine(
-               _imageRootFolder,
-                DateTime.Now.ToString("yyyyMMdd"));
-
-                Directory.CreateDirectory(todayFolder);
-                Directory.CreateDirectory(Path.Combine(todayFolder, "OK"));
-                Directory.CreateDirectory(Path.Combine(todayFolder, "NG"));
-                txtSaveFolder.Text = $"图片保存目录：{todayFolder}";
-
-                Directory.CreateDirectory(todayFolder);
-
-                txtSaveFolder.Text = $"图片保存目录：{todayFolder}";
+                txtSaveFolder.Text =
+                    $"HALCON当前图目录：{_plcCurrentImageFolder}\n历史素材目录：{GetTodayHistoryImageFolder()}";
 
                 _plcListenCts = new CancellationTokenSource();
 
@@ -537,6 +570,14 @@ namespace BcrRobotVision.Pages
                     break;
                 }
             }
+        }
+
+        private string GetTodayHistoryImageFolder()
+        {
+            return Path.Combine(
+                _imageRootFolder,
+                DateTime.Now.ToString("yyyyMMdd"),
+                _historyImageFolderName);
         }
 
         private void StartMaterialCaptureFromPlc(int materialNo)
