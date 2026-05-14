@@ -59,32 +59,51 @@ namespace BcrRobotVision.Pages
 
         private readonly PlcService _autoPlcService = new PlcService();
 
+        // PLC自动监听线程的取消源。
+        // 点击“启动自动监听”后会创建，点击停止监听、断开PLC或关闭软件时必须取消并释放，
+        // 否则后台Task可能继续读PLC，导致程序关闭后进程残留。
         private CancellationTokenSource? _plcListenCts;
+
+        // 关闭软件时置为true。此时不再向界面控件追加日志，避免窗口销毁后后台回调访问UI引发异常。
         private bool _isCleaningUp = false;
 
+        // 相机宽度目前是设备固定输出，保留这个值主要用于日志提醒。
         private const int ExpectedImageWidth = 704;
+
+        // 相机回调正常会给出 _iWantCaptureProfileLineNum，例如 1600。
+        // 如果设备没有返回目标线数，才使用这个兜底值。
         private const int FallbackExpectedImageHeight = 320;
+
+        // 保存上一轮PLC拍照信号状态，用来避免PLC信号保持为1时每50ms重复触发拍照。
         private bool _lastPhoto1Signal = false;
 
+        // 自动拍照互斥锁：防止PLC信号抖动或连续触发时，同时跑多个拍照/保存/HALCON流程。
         private readonly SemaphoreSlim _autoPhotoLock = new SemaphoreSlim(1, 1);
 
+        // 自动拍照时等待OnDepth回调返回完整3D图。
+        // PLC触发后创建，OnDepth收到完整图后TrySetResult，流程继续保存/检测。
         private TaskCompletionSource<CameraFrameSnapshot>? _grabWaiter;
         private DateTime _activeMaterialStartTime = DateTime.MinValue;
 
-        // PLC拍照信号
+        // PLC拍照信号：当前版本只监听一个开始拍照信号。
+        // 一个工位两个产品改为一次拍照，因此不再监听第二路拍照信号。
         private const ushort Material1StartAddress = 0x80; // 01x80 一号开始
 
-        // PLC结果地址
+        // PLC结果地址：虽然只拍一次图，但现场仍然有两个产品结果位。
+        // 算法未使能时两个地址都写OK=1；算法使能时当前也先把同一个结果写到两个地址。
         private const ushort Photo1ResultAddress = 100;  // 一号结果
         private const ushort Photo2ResultAddress = 101;  // 二号结果
 
         private int _activeMaterialNo = 0;
         private readonly string _imageRootFolder = @"D:\BcrRobotVisionData\InspectionImages";
-        // PLC触发拍照后，按时间戳保存完整素材图，不覆盖旧图
+
+        // PLC触发拍照后，按时间戳保存完整素材图，不覆盖旧图。
+        // 这里主要用于给HALCON算法改造提供原始素材。
         private readonly string _plcCurrentImageFolder = @"D:\BcrRobotVisionData\HalconCurrentImage";
         private readonly string _plcCurrentImagePath = @"D:\BcrRobotVisionData\HalconCurrentImage\CurrentImage.tiff";
         private string _lastSavedCurrentImagePath = "";
 
+        // 确保素材图保存目录可用。这里先检查盘符是否存在，避免现场机器没有D盘时报异常。
         private bool EnsureCurrentImageFolder()
         {
             try
@@ -195,7 +214,14 @@ namespace BcrRobotVision.Pages
         }
 
 
-        /*保存PLC触发后的完整素材图*/
+        /*
+         * 保存PLC触发后的完整素材图。
+         *
+         * 注意：
+         * 1. 文件名带时间戳，避免覆盖旧图，方便连续采集多张素材。
+         * 2. 优先使用HALCON real图保存tiff，保留原始高度数据。
+         * 3. 如果HALCON写图失败，则退回保存界面显示用的灰度高度图，至少保证现场能拿到图片。
+         */
         private string SaveCurrentImageForHalcon(HObject halconImage, BitmapSource? depthBitmap)
         {
             try
@@ -455,6 +481,8 @@ namespace BcrRobotVision.Pages
                 try
                 {
                     // 单次拍照模式：只监听01x80。
+                    // PLC线圈保持为1时会被每50ms读到一次，因此下面使用_lastPhoto1Signal
+                    // 只在“本次为1、上一轮为0”的瞬间启动一次自动拍照流程。
                     bool[] signals = _autoPlcService.ReadCoils(Material1StartAddress, 1);
 
                     bool photo1Signal = signals.Length > 0 && signals[0];
@@ -469,9 +497,12 @@ namespace BcrRobotVision.Pages
 
                     if (photo1Signal && !_lastPhoto1Signal)
                     {
+                        // 一个工位两个产品现在只触发一次拍照，因此固定传1。
+                        // 后续写PLC结果时会同时写100和101两个地址。
                         StartAutoPhotoFromPlc(1);
                     }
 
+                    // 每轮循环结束后记录当前状态，供下一轮判断是否需要触发。
                     _lastPhoto1Signal = photo1Signal;
 
                     if ((DateTime.Now - lastStateUpdateTime).TotalSeconds >= 1)
@@ -965,6 +996,8 @@ namespace BcrRobotVision.Pages
 
             AppendLog("准备发送相机软件触发信号");
 
+            // 这里仍然使用相机SDK的一次软件触发接口。
+            // 触发后并不立刻保存，而是等待OnDepth收到“目标线数”的完整高度图。
             bool triggerOk = _cameraWrap.SendGrabSignalToCamera();
 
             if (!triggerOk)
@@ -1010,6 +1043,8 @@ namespace BcrRobotVision.Pages
 
             if (!_cameraWrap.GetCameraIsGrab())
             {
+                // 切换到采集模式并启动采集。
+                // 不在这里设置抓取线数，避免覆盖相机自带软件里配置的1600/1700等线数。
                 if (!_cameraWrap.SetUserOperatorMode((byte)DATAMODE.DATAMODE_GRAB))
                 {
                     MessageBox.Show("切换数据采集模式失败");
@@ -1031,7 +1066,15 @@ namespace BcrRobotVision.Pages
 
 
 
-        /*自动拍照流程*/
+        /*
+         * PLC自动拍照主流程。
+         *
+         * 当前版本的现场目的：
+         * 1. PLC给01x80信号后，只拍一次完整3D图。
+         * 2. 保存完整素材图，用于后续修改HALCON算法。
+         * 3. 如果“启用视觉算法”未勾选，不调用旧HALCON算法，避免旧算法因为新图尺寸/流程不匹配而报错。
+         * 4. 算法未使能时，仍然向PLC 100/101写OK=1，让PLC流程可以继续跑。
+         */
         private async Task ProcessPlcPhotoSignalAsync(int cameraNo)
         {
             await _autoPhotoLock.WaitAsync();
@@ -1070,10 +1113,10 @@ namespace BcrRobotVision.Pages
                     AppendLog("高度图生成失败：depthBitmap为空");
                 }
 
-                // 2. 生成HALCON图像
+                // 2. 生成HALCON real图。这里保存的是原始高度数据，不是8位显示图。
                 HObject halconImage = CreateHalconImageFromSnapshot(snapshot);
 
-                // 3. 保存到固定文件夹，文件夹里永远只保留这一张图
+                // 3. 保存到素材目录。SaveCurrentImageForHalcon内部会加时间戳，不覆盖旧图片。
                 string currentImagePath = SaveCurrentImageForHalcon(halconImage, depthBitmap);
 
                 halconImage.Dispose();
@@ -1086,13 +1129,16 @@ namespace BcrRobotVision.Pages
 
                 if (chkEnableHalcon.IsChecked != true)
                 {
+                    // 旧HALCON算法还没改完时走这里：只采图保存，不执行算法。
+                    // 为了不阻塞PLC节拍，两个产品结果地址都先写OK。
                     ShowHalconDisabledResult();
                     WriteOkToBothResultAddresses();
                     AppendLog($"视觉算法未使能：已保存完整图片={currentImagePath}，PLC地址100/101已写入OK=1");
                     return;
                 }
 
-                // 4. HALCON从本次保存的图片读取并执行算法
+                // 4. HALCON从本次保存的图片读取并执行算法。
+                // 注意：输入给HALCON的是当前高度图实际尺寸，例如704×1600，而不是旧的704×320。
                 HalconInspectionResult halconResult = await Task.Run(() =>
                 {
                     return ExecuteHalconAlgorithmFromImagePath(currentImagePath);
@@ -1101,7 +1147,8 @@ namespace BcrRobotVision.Pages
                 // 5. 显示7个中文检测数据
                 ShowHalconResult(halconResult);
 
-                // 6. OK/NG写回PLC
+                // 6. OK/NG写回PLC。
+                // 目前新算法还没有拆出两个产品的独立结果，因此先把同一个结果写到100和101。
                 ushort resultAddress = cameraNo == 1
                     ? Photo1ResultAddress
                     : Photo2ResultAddress;
@@ -1563,6 +1610,9 @@ namespace BcrRobotVision.Pages
                 _hasFreshImage = true;
                 if (_grabWaiter != null)
                 {
+                    // 自动拍照流程正在等待完整图。
+                    // 目标高度优先取相机回调里的 _iWantCaptureProfileLineNum，
+                    // 因此相机软件里把抓取线数从1600改到1700后，上位机会自动跟随。
                     int targetHeight = GetTargetCaptureHeight(param);
 
                     if (_latestHeight >= targetHeight)
@@ -1570,6 +1620,7 @@ namespace BcrRobotVision.Pages
                         int actualWidth = _latestWidth;
                         int actualHeight = _latestHeight;
 
+                        // 保存实际收到的完整高度，不再裁剪成旧版320高度。
                         int targetCount = actualWidth * actualHeight;
                         float[] fixedZValues = new float[targetCount];
 
@@ -1629,6 +1680,7 @@ namespace BcrRobotVision.Pages
 
         private int GetTargetCaptureHeight(SG_DEPTHDATA_PARAM param)
         {
+            // 相机返回的目标线数可信时使用它；否则用320兜底，避免目标值为0时永远等不到完整图。
             return param._iWantCaptureProfileLineNum > 0
                 ? param._iWantCaptureProfileLineNum
                 : FallbackExpectedImageHeight;
@@ -1952,6 +2004,7 @@ namespace BcrRobotVision.Pages
 
             try
             {
+                // 先停止PLC监听，避免退出过程中后台线程继续访问PLC或UI。
                 _plcListenCts?.Cancel();
             }
             catch
@@ -1977,6 +2030,7 @@ namespace BcrRobotVision.Pages
 
             try
             {
+                // 停止界面刷新定时器，防止窗口销毁后仍然刷新3D/高度图控件。
                 _timerUpdatePointCloud.Stop();
             }
             catch
@@ -1985,6 +2039,7 @@ namespace BcrRobotVision.Pages
 
             try
             {
+                // 相机SDK通常会启动非托管采集线程，退出前必须先停止采集。
                 _cameraWrap?.StopCapture();
             }
             catch
@@ -1993,6 +2048,7 @@ namespace BcrRobotVision.Pages
 
             try
             {
+                // 显式关闭相机连接，避免相机SDK后台连接导致进程残留。
                 _cameraWrap?.CloseCamera();
             }
             catch
@@ -2001,6 +2057,7 @@ namespace BcrRobotVision.Pages
 
             try
             {
+                // 释放自己申请的非托管高度图缓存。
                 if (_pGrayData != IntPtr.Zero)
                 {
                     Marshal.FreeHGlobal(_pGrayData);
@@ -2019,6 +2076,7 @@ namespace BcrRobotVision.Pages
 
             try
             {
+                // 相机SDK官方要求软件退出时调用反初始化。
                 CameraWrapImpl.LibUnInit();
             }
             catch
@@ -2026,6 +2084,7 @@ namespace BcrRobotVision.Pages
             }
             try
             {
+                // 如果退出时自动拍照还在等待OnDepth，取消等待，避免异步任务挂住。
                 _grabWaiter?.TrySetCanceled();
                 _grabWaiter = null;
             }

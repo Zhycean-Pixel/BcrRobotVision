@@ -98,6 +98,9 @@ namespace BcrRobotVision.Views
             if (!_isShuttingDown)
             {
                 _isShuttingDown = true;
+
+                // 先从ContentControl移除页面，再主动释放硬件资源。
+                // 这样可以避免窗口已经关闭，但相机/PLC后台线程还在运行，导致进程残留。
                 MainContent.Content = null;
                 _cameraPage.ShutdownResources();
                 _plcPage.ShutdownResources();
