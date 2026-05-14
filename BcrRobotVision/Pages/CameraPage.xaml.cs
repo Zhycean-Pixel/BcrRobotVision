@@ -65,11 +65,22 @@ namespace BcrRobotVision.Pages
         private const int ExpectedImageHeight = 320;
         private bool _waitForStopSignal = false;
         private bool _isStopCaptureRequested = false;
+        private PlcPhotoState _plcPhotoState = PlcPhotoState.None;
 
         private readonly SemaphoreSlim _autoPhotoLock = new SemaphoreSlim(1, 1);
 
         private TaskCompletionSource<CameraFrameSnapshot>? _grabWaiter;
         private DateTime _activeMaterialStartTime = DateTime.MinValue;
+
+        private enum PlcPhotoState
+        {
+            None,
+            WaitStartSignal,
+            StartCapture,
+            Capturing,
+            StopCapture,
+            WaitSignalReset
+        }
 
         // PLC四个拍照信号
         private const ushort Material1StartAddress = 0x80; // 01x80 一号开始
@@ -383,6 +394,7 @@ namespace BcrRobotVision.Pages
                 _plcListenCts?.Cancel();
                 _plcListenCts?.Dispose();
                 _plcListenCts = null;
+                SetPlcPhotoState(PlcPhotoState.None);
 
                 _autoPlcService.Disconnect();
 
@@ -415,6 +427,8 @@ namespace BcrRobotVision.Pages
                     MessageBox.Show("PLC自动监听已经在运行");
                     return;
                 }
+
+                SetPlcPhotoState(PlcPhotoState.None);
 
                 string todayFolder = Path.Combine(
                _imageRootFolder,
@@ -459,17 +473,7 @@ namespace BcrRobotVision.Pages
                     bool startSignal = signals.Length > 0 && signals[0];
                     bool stopSignal = signals.Length > 2 && signals[2];
 
-                    if (_activeMaterialNo == 0 && startSignal)
-                    {
-                        StartMaterialCaptureFromPlc(1);
-                    }
-
-                    if (_activeMaterialNo != 0 &&
-                        !_isStopCaptureRequested &&
-                        stopSignal)
-                    {
-                        StopMaterialCaptureFromPlc(1);
-                    }
+                    RunPlcPhotoStateMachine(startSignal, stopSignal);
 
                     if ((DateTime.Now - lastStateUpdateTime).TotalSeconds >= 1)
                     {
@@ -478,7 +482,7 @@ namespace BcrRobotVision.Pages
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
                             txtAutoPlcState.Text =
-                                $"PLC自动：监听中  开始01x80={startSignal}  停止01x82={stopSignal}";
+                                $"PLC自动：{_plcPhotoState}  开始01x80={startSignal}  停止01x82={stopSignal}";
 
                             txtAutoPlcState.Foreground = Brushes.LimeGreen;
                         }));
@@ -503,6 +507,63 @@ namespace BcrRobotVision.Pages
                     break;
                 }
             }
+        }
+
+        private void RunPlcPhotoStateMachine(bool startSignal, bool stopSignal)
+        {
+            switch (_plcPhotoState)
+            {
+                case PlcPhotoState.None:
+                    _activeMaterialNo = 0;
+                    _grabWaiter = null;
+                    _waitForStopSignal = false;
+                    _isStopCaptureRequested = false;
+                    SetPlcPhotoState(PlcPhotoState.WaitStartSignal);
+                    break;
+
+                case PlcPhotoState.WaitStartSignal:
+                    if (startSignal)
+                    {
+                        SetPlcPhotoState(PlcPhotoState.StartCapture);
+                    }
+                    break;
+
+                case PlcPhotoState.StartCapture:
+                    StartMaterialCaptureFromPlc(1);
+                    SetPlcPhotoState(PlcPhotoState.Capturing);
+                    break;
+
+                case PlcPhotoState.Capturing:
+                    if (stopSignal)
+                    {
+                        SetPlcPhotoState(PlcPhotoState.StopCapture);
+                    }
+                    break;
+
+                case PlcPhotoState.StopCapture:
+                    StopMaterialCaptureFromPlc(1);
+                    SetPlcPhotoState(PlcPhotoState.WaitSignalReset);
+                    break;
+
+                case PlcPhotoState.WaitSignalReset:
+                    if (!startSignal && !stopSignal && _activeMaterialNo == 0 && !_isStopCaptureRequested)
+                    {
+                        SetPlcPhotoState(PlcPhotoState.WaitStartSignal);
+                    }
+                    break;
+            }
+        }
+
+        private void SetPlcPhotoState(PlcPhotoState nextState)
+        {
+            if (_plcPhotoState == nextState)
+                return;
+
+            _plcPhotoState = nextState;
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+            {
+                AppendLog($"PLC拍照状态切换：{nextState}");
+            }));
         }
 
         private void StartMaterialCaptureFromPlc(int materialNo)
@@ -1189,6 +1250,7 @@ namespace BcrRobotVision.Pages
                 _plcListenCts?.Cancel();
                 _plcListenCts?.Dispose();
                 _plcListenCts = null;
+                SetPlcPhotoState(PlcPhotoState.None);
 
                 txtAutoPlcState.Text = _autoPlcService.IsConnected
                     ? "PLC自动：已连接，未监听"
