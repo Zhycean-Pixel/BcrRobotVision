@@ -3,6 +3,7 @@ using System.IO.Packaging;
 using System.Windows;
 using System.Windows.Controls;
 using BcrRobotVision.Models;
+using System.ComponentModel;
 
 
 
@@ -17,6 +18,7 @@ namespace BcrRobotVision.Views
         private readonly SpcReportPage _spcReportPage;
         private bool _isModeChanging = false;
         private int _lastModeIndex = 0;
+        private bool _isShuttingDown = false;
         public MainWindow()
         {
             InitializeComponent();
@@ -90,6 +92,20 @@ namespace BcrRobotVision.Views
         {
             MainContent.Content = _spcReportPage;
         }   
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            if (!_isShuttingDown)
+            {
+                _isShuttingDown = true;
+                MainContent.Content = null;
+                _cameraPage.ShutdownResources();
+                _plcPage.ShutdownResources();
+            }
+
+            base.OnClosing(e);
+        }
+
         protected override void OnClosed(System.EventArgs e)
         {
             base.OnClosed(e);

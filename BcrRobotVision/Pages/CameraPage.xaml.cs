@@ -60,6 +60,7 @@ namespace BcrRobotVision.Pages
         private readonly PlcService _autoPlcService = new PlcService();
 
         private CancellationTokenSource? _plcListenCts;
+        private bool _isCleaningUp = false;
 
         private const int ExpectedImageWidth = 704;
         private const int FallbackExpectedImageHeight = 320;
@@ -1917,6 +1918,18 @@ namespace BcrRobotVision.Pages
 
         private void AppendLog(string message)
         {
+            if (_isCleaningUp)
+            {
+                try
+                {
+                    _logService.Write(message);
+                }
+                catch
+                {
+                }
+                return;
+            }
+
             if (!Dispatcher.CheckAccess())
             {
                 Dispatcher.BeginInvoke(new Action(() => AppendLog(message)));
@@ -1930,8 +1943,38 @@ namespace BcrRobotVision.Pages
             _logService.Write(message);
         }
 
-        private void CameraPage_Unloaded(object sender, RoutedEventArgs e)
+        public void ShutdownResources()
         {
+            if (_isCleaningUp)
+                return;
+
+            _isCleaningUp = true;
+
+            try
+            {
+                _plcListenCts?.Cancel();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                _plcListenCts?.Dispose();
+                _plcListenCts = null;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                _autoPlcService.Disconnect();
+            }
+            catch
+            {
+            }
+
             try
             {
                 _timerUpdatePointCloud.Stop();
@@ -1943,6 +1986,14 @@ namespace BcrRobotVision.Pages
             try
             {
                 _cameraWrap?.StopCapture();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                _cameraWrap?.CloseCamera();
             }
             catch
             {
@@ -1975,15 +2026,17 @@ namespace BcrRobotVision.Pages
             }
             try
             {
-                _plcListenCts?.Cancel();
-                _plcListenCts?.Dispose();
-                _plcListenCts = null;
-
-                _autoPlcService.Disconnect();
+                _grabWaiter?.TrySetCanceled();
+                _grabWaiter = null;
             }
             catch
             {
             }
+        }
+
+        private void CameraPage_Unloaded(object sender, RoutedEventArgs e)
+        {
+            ShutdownResources();
         }
     }
 }

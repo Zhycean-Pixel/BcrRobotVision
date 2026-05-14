@@ -15,6 +15,17 @@ namespace BcrRobotVision.Pages
             InitializeComponent();
         }
 
+        public void ShutdownResources()
+        {
+            try
+            {
+                _plcService.Disconnect();
+            }
+            catch
+            {
+            }
+        }
+
         private void BtnConnectPlc_Click(object sender, RoutedEventArgs e)
         {
             try

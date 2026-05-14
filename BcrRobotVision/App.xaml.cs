@@ -22,5 +22,11 @@ namespace BcrRobotVision
                 Shutdown();
             }
         }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            base.OnExit(e);
+            Environment.Exit(0);
+        }
     }
 }
