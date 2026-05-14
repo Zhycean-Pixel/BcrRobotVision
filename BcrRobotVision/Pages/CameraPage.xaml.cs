@@ -63,8 +63,9 @@ namespace BcrRobotVision.Pages
 
         private const int ExpectedImageWidth = 704;
         private const int ExpectedImageHeight = 320;
-        private bool _lastPhoto1Signal = false;
-        private bool _lastPhotoStopSignal = false;
+        private bool _lastStartSignal = false;
+        private bool _lastStopSignal = false;
+        private bool _stopSignalArmed = false;
         private bool _waitForStopSignal = false;
         private bool _isStopCaptureRequested = false;
 
@@ -418,8 +419,11 @@ namespace BcrRobotVision.Pages
                     return;
                 }
 
-                _lastPhoto1Signal = false;
-                _lastPhotoStopSignal = false;
+                bool[] currentSignals = _autoPlcService.ReadCoils(Material1StartAddress, 3);
+                _lastStartSignal = currentSignals.Length > 0 && currentSignals[0];
+                _lastStopSignal = currentSignals.Length > 2 && currentSignals[2];
+                _stopSignalArmed = false;
+
                 string todayFolder = Path.Combine(
                _imageRootFolder,
                 DateTime.Now.ToString("yyyyMMdd"));
@@ -440,7 +444,7 @@ namespace BcrRobotVision.Pages
                 txtAutoPlcState.Text = "PLC自动：高速监听中";
                 txtAutoPlcState.Foreground = Brushes.LimeGreen;
 
-                AppendLog("PLC自动监听已启动，50ms读取拍照开始01x80 / 停止01x82");
+                AppendLog($"PLC自动监听已启动，50ms读取拍照开始01x80 / 停止01x82，初始状态：开始={_lastStartSignal}，停止={_lastStopSignal}");
             }
             catch (Exception ex)
             {
@@ -463,8 +467,8 @@ namespace BcrRobotVision.Pages
                     bool startSignal = signals.Length > 0 && signals[0];
                     bool stopSignal = signals.Length > 2 && signals[2];
 
-                    if (startSignal != _lastPhoto1Signal ||
-                        stopSignal != _lastPhotoStopSignal)
+                    if (startSignal != _lastStartSignal ||
+                        stopSignal != _lastStopSignal)
                     {
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
@@ -472,18 +476,29 @@ namespace BcrRobotVision.Pages
                         }));
                     }
 
-                    if (startSignal && !_lastPhoto1Signal)
+                    bool startRisingEdge = startSignal && !_lastStartSignal;
+                    bool stopRisingEdge = stopSignal && !_lastStopSignal;
+
+                    if (startRisingEdge)
                     {
                         StartMaterialCaptureFromPlc(1);
                     }
 
-                    if (stopSignal && !_lastPhotoStopSignal)
+                    if (_activeMaterialNo != 0 && !stopSignal)
                     {
-                        StopMaterialCaptureFromPlc(1);
+                        _stopSignalArmed = true;
                     }
 
-                    _lastPhoto1Signal = startSignal;
-                    _lastPhotoStopSignal = stopSignal;
+                    if (_activeMaterialNo != 0 &&
+                        _stopSignalArmed &&
+                        stopRisingEdge)
+                    {
+                        StopMaterialCaptureFromPlc(1);
+                        _stopSignalArmed = false;
+                    }
+
+                    _lastStartSignal = startSignal;
+                    _lastStopSignal = stopSignal;
 
                     if ((DateTime.Now - lastStateUpdateTime).TotalSeconds >= 1)
                     {
@@ -556,6 +571,7 @@ namespace BcrRobotVision.Pages
 
                 _activeMaterialNo = materialNo;
                 _activeMaterialStartTime = DateTime.Now;
+                _stopSignalArmed = false;
 
                 _grabWaiter = new TaskCompletionSource<CameraFrameSnapshot>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
