@@ -63,28 +63,15 @@ namespace BcrRobotVision.Pages
 
         private const int ExpectedImageWidth = 704;
         private const int ExpectedImageHeight = 320;
-        private bool _waitForStopSignal = false;
-        private bool _isStopCaptureRequested = false;
-        private PlcPhotoState _plcPhotoState = PlcPhotoState.None;
+        private bool _lastPhoto1Signal = false;
 
         private readonly SemaphoreSlim _autoPhotoLock = new SemaphoreSlim(1, 1);
 
         private TaskCompletionSource<CameraFrameSnapshot>? _grabWaiter;
         private DateTime _activeMaterialStartTime = DateTime.MinValue;
 
-        private enum PlcPhotoState
-        {
-            None,
-            WaitStartSignal,
-            StartCapture,
-            Capturing,
-            StopCapture,
-            WaitSignalReset
-        }
-
-        // PLC四个拍照信号
+        // PLC拍照信号
         private const ushort Material1StartAddress = 0x80; // 01x80 一号开始
-        private const ushort Material1StopAddress = 0x82;  // 01x82 一号停止
 
         // PLC结果地址
         private const ushort Photo1ResultAddress = 100;  // 一号结果
@@ -394,7 +381,6 @@ namespace BcrRobotVision.Pages
                 _plcListenCts?.Cancel();
                 _plcListenCts?.Dispose();
                 _plcListenCts = null;
-                SetPlcPhotoState(PlcPhotoState.None);
 
                 _autoPlcService.Disconnect();
 
@@ -428,7 +414,7 @@ namespace BcrRobotVision.Pages
                     return;
                 }
 
-                SetPlcPhotoState(PlcPhotoState.None);
+                _lastPhoto1Signal = false;
 
                 string todayFolder = Path.Combine(
                _imageRootFolder,
@@ -450,7 +436,7 @@ namespace BcrRobotVision.Pages
                 txtAutoPlcState.Text = "PLC自动：高速监听中";
                 txtAutoPlcState.Foreground = Brushes.LimeGreen;
 
-                AppendLog("PLC自动监听已启动，50ms读取拍照开始01x80 / 停止01x82");
+                AppendLog("PLC自动监听已启动，50ms读取一次拍照信号 01x80");
             }
             catch (Exception ex)
             {
@@ -467,13 +453,25 @@ namespace BcrRobotVision.Pages
             {
                 try
                 {
-                    // 3D相机持续拍照模式：01x80开始，01x82停止。
-                    bool[] signals = _autoPlcService.ReadCoils(Material1StartAddress, 3);
+                    // 单次拍照模式：只监听01x80。
+                    bool[] signals = _autoPlcService.ReadCoils(Material1StartAddress, 1);
 
-                    bool startSignal = signals.Length > 0 && signals[0];
-                    bool stopSignal = signals.Length > 2 && signals[2];
+                    bool photo1Signal = signals.Length > 0 && signals[0];
 
-                    RunPlcPhotoStateMachine(startSignal, stopSignal);
+                    if (photo1Signal != _lastPhoto1Signal)
+                    {
+                        _ = Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            AppendLog($"PLC单次拍照信号变化：01x80={photo1Signal}");
+                        }));
+                    }
+
+                    if (photo1Signal && !_lastPhoto1Signal)
+                    {
+                        StartAutoPhotoFromPlc(1);
+                    }
+
+                    _lastPhoto1Signal = photo1Signal;
 
                     if ((DateTime.Now - lastStateUpdateTime).TotalSeconds >= 1)
                     {
@@ -482,7 +480,7 @@ namespace BcrRobotVision.Pages
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
                             txtAutoPlcState.Text =
-                                $"PLC自动：{_plcPhotoState}  开始01x80={startSignal}  停止01x82={stopSignal}";
+                                $"PLC自动：监听中  01x80={photo1Signal}";
 
                             txtAutoPlcState.Foreground = Brushes.LimeGreen;
                         }));
@@ -509,63 +507,6 @@ namespace BcrRobotVision.Pages
             }
         }
 
-        private void RunPlcPhotoStateMachine(bool startSignal, bool stopSignal)
-        {
-            switch (_plcPhotoState)
-            {
-                case PlcPhotoState.None:
-                    _activeMaterialNo = 0;
-                    _grabWaiter = null;
-                    _waitForStopSignal = false;
-                    _isStopCaptureRequested = false;
-                    SetPlcPhotoState(PlcPhotoState.WaitStartSignal);
-                    break;
-
-                case PlcPhotoState.WaitStartSignal:
-                    if (startSignal)
-                    {
-                        SetPlcPhotoState(PlcPhotoState.StartCapture);
-                    }
-                    break;
-
-                case PlcPhotoState.StartCapture:
-                    StartMaterialCaptureFromPlc(1);
-                    SetPlcPhotoState(PlcPhotoState.Capturing);
-                    break;
-
-                case PlcPhotoState.Capturing:
-                    if (stopSignal)
-                    {
-                        SetPlcPhotoState(PlcPhotoState.StopCapture);
-                    }
-                    break;
-
-                case PlcPhotoState.StopCapture:
-                    StopMaterialCaptureFromPlc(1);
-                    SetPlcPhotoState(PlcPhotoState.WaitSignalReset);
-                    break;
-
-                case PlcPhotoState.WaitSignalReset:
-                    if (!startSignal && !stopSignal && _activeMaterialNo == 0 && !_isStopCaptureRequested)
-                    {
-                        SetPlcPhotoState(PlcPhotoState.WaitStartSignal);
-                    }
-                    break;
-            }
-        }
-
-        private void SetPlcPhotoState(PlcPhotoState nextState)
-        {
-            if (_plcPhotoState == nextState)
-                return;
-
-            _plcPhotoState = nextState;
-            _ = Dispatcher.BeginInvoke(new Action(() =>
-            {
-                AppendLog($"PLC拍照状态切换：{nextState}");
-            }));
-        }
-
         private void StartMaterialCaptureFromPlc(int materialNo)
         {
             _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -579,8 +520,6 @@ namespace BcrRobotVision.Pages
                         AppendLog($"物料{_activeMaterialNo}超时未结束，自动复位，允许新的物料{materialNo}开始");
                         _activeMaterialNo = 0;
                         _grabWaiter = null;
-                        _waitForStopSignal = false;
-                        _isStopCaptureRequested = false;
                     }
                     else
                     {
@@ -606,8 +545,6 @@ namespace BcrRobotVision.Pages
 
                 _grabWaiter = new TaskCompletionSource<CameraFrameSnapshot>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
-                _waitForStopSignal = true;
-                _isStopCaptureRequested = false;
 
                 bool triggerOk = _cameraWrap.SendGrabSignalToCamera(false);
 
@@ -616,8 +553,6 @@ namespace BcrRobotVision.Pages
                     AppendLog($"物料{materialNo}发送抓图触发失败");
                     _activeMaterialNo = 0;
                     _grabWaiter = null;
-                    _waitForStopSignal = false;
-                    _isStopCaptureRequested = false;
                     return;
                 }
 
@@ -650,8 +585,6 @@ namespace BcrRobotVision.Pages
                 {
                     AppendLog($"物料{materialNo}停止失败：没有等待中的图像任务");
                     _activeMaterialNo = 0;
-                    _waitForStopSignal = false;
-                    _isStopCaptureRequested = false;
                     return;
                 }
 
@@ -660,12 +593,8 @@ namespace BcrRobotVision.Pages
                     AppendLog($"物料{materialNo}停止失败：相机对象为空");
                     _grabWaiter = null;
                     _activeMaterialNo = 0;
-                    _waitForStopSignal = false;
-                    _isStopCaptureRequested = false;
                     return;
                 }
-
-                _isStopCaptureRequested = true;
 
                 bool stopOk = _cameraWrap.SendGrabSignalToCamera(true);
                 if (!stopOk)
@@ -673,8 +602,6 @@ namespace BcrRobotVision.Pages
                     AppendLog($"物料{materialNo}发送停止抓图信号失败");
                     _grabWaiter = null;
                     _activeMaterialNo = 0;
-                    _waitForStopSignal = false;
-                    _isStopCaptureRequested = false;
                     return;
                 }
 
@@ -687,8 +614,6 @@ namespace BcrRobotVision.Pages
                     AppendLog($"物料{materialNo}等待完整3D图超时");
                     _grabWaiter = null;
                     _activeMaterialNo = 0;
-                    _waitForStopSignal = false;
-                    _isStopCaptureRequested = false;
                     return;
                 }
 
@@ -696,8 +621,6 @@ namespace BcrRobotVision.Pages
 
                 _grabWaiter = null;
                 _activeMaterialNo = 0;
-                _waitForStopSignal = false;
-                _isStopCaptureRequested = false;
 
                 await ProcessMaterialSnapshotAsync(materialNo, snapshot);
             }
@@ -707,8 +630,6 @@ namespace BcrRobotVision.Pages
                 MessageBox.Show($"物料{materialNo}停止处理异常：{ex.Message}");
                 _grabWaiter = null;
                 _activeMaterialNo = 0;
-                _waitForStopSignal = false;
-                _isStopCaptureRequested = false;
             }
             finally
             {
@@ -1040,8 +961,6 @@ namespace BcrRobotVision.Pages
 
             _grabWaiter = new TaskCompletionSource<CameraFrameSnapshot>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
-            _waitForStopSignal = false;
-            _isStopCaptureRequested = false;
 
             AppendLog("准备发送相机软件触发信号");
 
@@ -1250,7 +1169,6 @@ namespace BcrRobotVision.Pages
                 _plcListenCts?.Cancel();
                 _plcListenCts?.Dispose();
                 _plcListenCts = null;
-                SetPlcPhotoState(PlcPhotoState.None);
 
                 txtAutoPlcState.Text = _autoPlcService.IsConnected
                     ? "PLC自动：已连接，未监听"
@@ -1650,13 +1568,7 @@ namespace BcrRobotVision.Pages
                 _hasFreshImage = true;
                 if (_grabWaiter != null)
                 {
-                    bool canCompleteGrab = !_waitForStopSignal || _isStopCaptureRequested;
-
-                    if (!canCompleteGrab)
-                    {
-                        AppendLog($"持续采集中，暂不完成图像：{_latestWidth}×{_latestHeight}，等待PLC停止信号01x82");
-                    }
-                    else if (_latestHeight >= ExpectedImageHeight)
+                    if (_latestHeight >= ExpectedImageHeight)
                     {
                         int actualWidth = _latestWidth;
                         int actualHeight = ExpectedImageHeight;
