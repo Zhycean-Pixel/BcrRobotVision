@@ -1,0 +1,381 @@
+﻿<UserControl x:Class="BcrRobotVision.Pages.CameraPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource BgMain}">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="420"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- 左侧控制区 -->
+        <Border Grid.Column="0"
+                Style="{StaticResource IndustrialCardStyle}"
+                Margin="0,0,12,0">
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="相机控制"
+                               Style="{StaticResource SectionTitleStyle}"/>
+
+                    <TextBlock Text="本机 IP"
+                               Style="{StaticResource LabelTextStyle}"/>
+                    <TextBox x:Name="txtLocalIp"
+                             Style="{StaticResource IndustrialTextBoxStyle}"
+                             Margin="0,0,0,12"/>
+
+                    <TextBlock Text="相机 IP"
+                               Style="{StaticResource LabelTextStyle}"/>
+                    <TextBox x:Name="txtCameraIp"
+                             Style="{StaticResource IndustrialTextBoxStyle}"
+                             Margin="0,0,0,16"/>
+
+                    <UniformGrid Columns="3" Margin="0,0,0,10">
+                        <Button x:Name="btnDetect"
+                                Content="搜索相机"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Margin="0,0,8,0"
+                                Click="BtnDetect_Click"/>
+                        <Button x:Name="btnConnect"
+                                Content="连接相机"
+                                Style="{StaticResource IndustrialButtonStyle}"
+                                Margin="0,0,8,0"
+                                Click="BtnConnect_Click"/>
+                        <Button x:Name="btnDisConnect"
+                                Content="断开相机"
+                                Style="{StaticResource IndustrialButtonStyle}"
+                                Click="BtnDisConnect_Click"/>
+                    </UniformGrid>
+
+                    <UniformGrid Columns="3" Margin="0,0,0,10">
+                        <Button x:Name="btnStartCapture"
+                                Content="开始采集"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Margin="0,0,8,0"
+                                Click="BtnStartCapture_Click"/>
+                        <Button x:Name="btnTrigger"
+                                Content="触发抓图"
+                                Style="{StaticResource IndustrialButtonStyle}"
+                                Margin="0,0,8,0"
+                                Click="BtnTrigger_Click"/>
+                        <Button x:Name="btnStopCapture"
+                                Content="停止采集"
+                                Style="{StaticResource IndustrialButtonStyle}"
+                                Click="BtnStopCapture_Click"/>
+                    </UniformGrid>
+
+                    <UniformGrid Columns="3" Margin="0,0,0,14">
+                        <Button x:Name="btnCameraParam"
+                                Content="相机参数"
+                                Style="{StaticResource IndustrialButtonStyle}"
+                                Margin="0,0,8,0"
+                                Click="BtnCameraParam_Click"/>
+                    </UniformGrid>
+
+                    <UniformGrid Columns="3" Margin="0,0,0,14">
+                        <Button x:Name="btnhalcon"
+            Content="检测测试"
+            Style="{StaticResource IndustrialButtonStyle}"
+            Margin="0,0,8,0"
+            Click="BtnTestHalcon_Click"/>
+                    </UniformGrid>
+
+                    <CheckBox x:Name="chkShowImage"
+                              Content="显示图像"
+                              IsChecked="True"
+                              Style="{StaticResource IndustrialCheckBoxStyle}"
+                              Margin="0,0,0,10"/>
+
+                    <CheckBox x:Name="chkEnableHalcon"
+                              Content="启用视觉算法"
+                              IsChecked="False"
+                              Style="{StaticResource IndustrialCheckBoxStyle}"
+                              Margin="0,0,0,18"/>
+
+                    <TextBlock Text="连接状态"
+                               Style="{StaticResource LabelTextStyle}"/>
+                    <TextBlock x:Name="txtConnectState"
+                               Text="未连接"
+                               Foreground="{StaticResource DangerRed}"
+                               FontSize="15"
+                               FontWeight="Bold"
+                               Margin="0,0,0,16"/>
+
+                    <TextBlock Text="相机信息"
+                               Style="{StaticResource LabelTextStyle}"/>
+                    <Border Background="#091728"
+                            BorderBrush="{StaticResource BorderBlue}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10"
+                            Margin="0,0,0,16">
+                        <TextBlock x:Name="txtCameraInfo"
+                                   Text="等待搜索相机"
+                                   Foreground="{StaticResource TextMain}"
+                                   FontSize="13"
+                                   TextWrapping="Wrap"/>
+                    </Border>
+
+                    <TextBlock Text="采集信息"
+                               Style="{StaticResource LabelTextStyle}"/>
+                    <Border Background="#091728"
+                            BorderBrush="{StaticResource BorderBlue}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10"
+                            Margin="0,0,0,16">
+                        <TextBlock x:Name="txtGrabInfo"
+                                   Text="暂无数据"
+                                   Foreground="{StaticResource TextMain}"
+                                   FontSize="13"
+                                   TextWrapping="Wrap"/>
+                    </Border>
+
+                    <TextBlock Text="PLC自动联动"
+           Style="{StaticResource SectionTitleStyle}"
+           Margin="0,16,0,14"/>
+
+                    <TextBlock Text="PLC IP"
+           Style="{StaticResource LabelTextStyle}"/>
+                    <TextBox x:Name="txtAutoPlcIp"
+         Text="192.168.1.10"
+         Style="{StaticResource IndustrialTextBoxStyle}"
+         Margin="0,0,0,12"/>
+
+                    <TextBlock Text="PLC端口"
+           Style="{StaticResource LabelTextStyle}"/>
+                    <TextBox x:Name="txtAutoPlcPort"
+         Text="502"
+         Style="{StaticResource IndustrialTextBoxStyle}"
+         Margin="0,0,0,12"/>
+
+                    <UniformGrid Columns="2" Margin="0,0,0,10">
+                        <Button Content="连接PLC"
+            Style="{StaticResource PrimaryButtonStyle}"
+            Margin="0,0,8,0"
+            Click="BtnAutoConnectPlc_Click"/>
+
+                        <Button Content="断开PLC"
+            Style="{StaticResource IndustrialButtonStyle}"
+            Click="BtnAutoDisconnectPlc_Click"/>
+                    </UniformGrid>
+
+                    <UniformGrid Columns="2" Margin="0,0,0,10">
+                        <Button Content="启动自动监听"
+            Style="{StaticResource PrimaryButtonStyle}"
+            Margin="0,0,8,0"
+            Click="BtnStartPlcAuto_Click"/>
+
+                        <Button Content="停止自动监听"
+            Style="{StaticResource IndustrialButtonStyle}"
+            Click="BtnStopPlcAuto_Click"/>
+                    </UniformGrid>
+
+                    <TextBlock x:Name="txtAutoPlcState"
+           Text="PLC自动：未连接"
+           Foreground="{StaticResource DangerRed}"
+           FontSize="15"
+           FontWeight="Bold"
+           Margin="0,0,0,16"/>
+
+                    <TextBlock x:Name="txtSaveFolder"
+           Text="图片保存目录：--"
+           Foreground="{StaticResource TextSub}"
+           FontSize="12"
+           TextWrapping="Wrap"
+           Margin="0,0,0,16"/>
+
+                    <TextBlock Text="检测结果"
+           Style="{StaticResource SectionTitleStyle}"
+           Margin="0,16,0,14"/>
+
+                    <Border Background="#091728"
+        BorderBrush="{StaticResource BorderBlue}"
+        BorderThickness="1"
+        CornerRadius="6"
+        Padding="10"
+        Margin="0,0,0,16">
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/>
+                                <RowDefinition Height="38"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                   Text=" 左侧高度"
+                   Foreground="{StaticResource TextSub}"
+                   FontWeight="Bold"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1"
+                   x:Name="txtMeanZLeft"
+                   Text="--"
+                   Foreground="{StaticResource TextMain}"
+                   FontWeight="Bold"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                   Text="右侧高度"
+                   Foreground="{StaticResource TextSub}"
+                   FontWeight="Bold"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                   x:Name="txtMeanZRight"
+                   Text="--"
+                   Foreground="{StaticResource TextMain}"
+                   FontWeight="Bold"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                   Text="倾斜差值"
+                   Foreground="{StaticResource TextSub}"
+                   FontWeight="Bold"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1"
+                   x:Name="txtTiltDiff"
+                   Text="--"
+                   Foreground="{StaticResource TextMain}"
+                   FontWeight="Bold"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                   Text="左侧偏差"
+                   Foreground="{StaticResource TextSub}"
+                   FontWeight="Bold"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1"
+                   x:Name="txtDevLRegion"
+                   Text="--"
+                   Foreground="{StaticResource TextMain}"
+                   FontWeight="Bold"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                   Text="右侧偏差"
+                   Foreground="{StaticResource TextSub}"
+                   FontWeight="Bold"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1"
+                   x:Name="txtDevRRegion"
+                   Text="--"
+                   Foreground="{StaticResource TextMain}"
+                   FontWeight="Bold"/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0"
+                   Text="最大偏差"
+                   Foreground="{StaticResource TextSub}"
+                   FontWeight="Bold"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1"
+                   x:Name="txtMaxDeviation"
+                   Text="--"
+                   Foreground="{StaticResource TextMain}"
+                   FontWeight="Bold"/>
+
+                            <TextBlock Grid.Row="6" Grid.Column="0"
+                   Text="检测结果"
+                   Foreground="{StaticResource TextSub}"
+                   FontWeight="Bold"
+                   FontSize="16"/>
+                            <TextBlock Grid.Row="6" Grid.Column="1"
+                   x:Name="txtHalconResult"
+                   Text="--"
+                   Foreground="{StaticResource AccentBlue}"
+                   FontWeight="Bold"
+                   FontSize="20"/>
+                        </Grid>
+                    </Border>
+
+                    <Button Content="测试HALCON算法"
+        Style="{StaticResource PrimaryButtonStyle}"
+        Margin="0,0,0,16"
+        Click="BtnTestHalcon_Click"/>
+
+                    <TextBlock Text="运行日志"
+                               Style="{StaticResource LabelTextStyle}"/>
+                    <TextBox x:Name="txtLog"
+                             Style="{StaticResource LogTextBoxStyle}"/>
+                    
+                    
+                    
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- 右侧图像区 -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- 高度图 -->
+            <Border Grid.Row="0"
+                    Style="{StaticResource IndustrialCardStyle}"
+                    Margin="0,0,0,12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="高度图"
+                               Style="{StaticResource SectionTitleStyle}"/>
+
+                    <Border Grid.Row="1"
+                            Background="Black"
+                            BorderBrush="{StaticResource BorderBlue}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <Image x:Name="imgDepth"
+                               Stretch="Uniform"/>
+                    </Border>
+
+                    <TextBlock x:Name="txtDepthImageInfo"
+                               Grid.Row="2"
+                               Foreground="{StaticResource TextSub}"
+                               FontSize="13"
+                               Margin="0,8,0,0"
+                               Text="高度图数据：暂无"/>
+                </Grid>
+            </Border>
+
+            <!-- 三维点云图 -->
+            <Border Grid.Row="1"
+                    Style="{StaticResource IndustrialCardStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="三维点云图"
+                               Style="{StaticResource SectionTitleStyle}"/>
+
+                    <Border Grid.Row="1"
+                            Background="Black"
+                            BorderBrush="{StaticResource BorderBlue}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <Viewport3D x:Name="viewport3D"
+                                    ClipToBounds="True"
+                                    MouseLeftButtonDown="Viewport3D_MouseLeftButtonDown"
+                                    MouseLeftButtonUp="Viewport3D_MouseLeftButtonUp"
+                                    MouseMove="Viewport3D_MouseMove"
+                                    MouseWheel="Viewport3D_MouseWheel"/>
+                    </Border>
+
+                    <TextBlock x:Name="txtPointCloudInfo"
+                               Grid.Row="2"
+                               Foreground="{StaticResource TextSub}"
+                               FontSize="13"
+                               Margin="0,8,0,0"
+                               Text="三维数据：暂无"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

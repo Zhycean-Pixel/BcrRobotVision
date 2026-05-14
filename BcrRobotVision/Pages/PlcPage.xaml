@@ -1,0 +1,99 @@
+﻿<UserControl x:Class="BcrRobotVision.Pages.PlcPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource BgMain}">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="460"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0"
+                Style="{StaticResource IndustrialCardStyle}"
+                Margin="0,0,12,0">
+
+            <StackPanel>
+                <TextBlock Text="PLC通信"
+                           Style="{StaticResource SectionTitleStyle}"/>
+
+                <TextBlock Text="PLC IP"
+                           Style="{StaticResource LabelTextStyle}"/>
+                <TextBox x:Name="txtPlcIp"
+                         Text="192.168.1.10"
+                         Style="{StaticResource IndustrialTextBoxStyle}"
+                         Margin="0,0,0,12"/>
+
+                <TextBlock Text="端口号"
+                           Style="{StaticResource LabelTextStyle}"/>
+                <TextBox x:Name="txtPlcPort"
+                         Text="502"
+                         Style="{StaticResource IndustrialTextBoxStyle}"
+                         Margin="0,0,0,16"/>
+
+                <UniformGrid Columns="2" Margin="0,0,0,16">
+                    <Button Content="连接PLC"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Margin="0,0,8,0"
+                            Click="BtnConnectPlc_Click"/>
+
+                    <Button Content="断开PLC"
+                            Style="{StaticResource IndustrialButtonStyle}"
+                            Click="BtnDisconnectPlc_Click"/>
+                </UniformGrid>
+
+                <TextBlock x:Name="txtPlcState"
+                           Text="PLC：未连接"
+                           Foreground="{StaticResource DangerRed}"
+                           FontSize="16"
+                           FontWeight="Bold"
+                           Margin="0,0,0,22"/>
+
+                <TextBlock Text="手动测试写入"
+                           Style="{StaticResource SectionTitleStyle}"/>
+
+                <UniformGrid Columns="2" Margin="0,0,0,10">
+                    <Button Content="拍照1 OK写1"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Margin="0,0,8,0"
+                            Click="BtnWriteCam1Ok_Click"/>
+
+                    <Button Content="拍照1 NG写2"
+                            Style="{StaticResource IndustrialButtonStyle}"
+                            Click="BtnWriteCam1Ng_Click"/>
+                </UniformGrid>
+
+                <UniformGrid Columns="2" Margin="0,0,0,20">
+                    <Button Content="拍照2 OK写1"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Margin="0,0,8,0"
+                            Click="BtnWriteCam2Ok_Click"/>
+
+                    <Button Content="拍照2 NG写2"
+                            Style="{StaticResource IndustrialButtonStyle}"
+                            Click="BtnWriteCam2Ng_Click"/>
+                </UniformGrid>
+
+                <TextBlock Text="地址说明"
+                           Style="{StaticResource SectionTitleStyle}"/>
+
+                <TextBlock Foreground="{StaticResource TextMain}"
+                           FontSize="14"
+                           TextWrapping="Wrap"
+                           Text="PLC：192.168.1.10:502&#x0a;拍照1启动：01x80 Bool&#x0a;拍照2启动：01x81 Bool&#x0a;拍照1结果：03X100 Short&#x0a;拍照2结果：03X101 Short&#x0a;&#x0a;当前程序写入规则：OK=1，NG=2"/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Column="1"
+                Style="{StaticResource IndustrialCardStyle}">
+            <StackPanel>
+                <TextBlock Text="PLC运行日志"
+                           Style="{StaticResource SectionTitleStyle}"/>
+
+                <TextBox x:Name="txtPlcLog"
+                         Style="{StaticResource LogTextBoxStyle}"
+                         Height="600"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

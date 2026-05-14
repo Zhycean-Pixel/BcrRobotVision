@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UseWPF>true</UseWPF>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<ApplicationIcon>Assets\favicon.ico</ApplicationIcon>
+		<PlatformTarget>x64</PlatformTarget>
+		<Platforms>AnyCPU;x64</Platforms>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Remove="Assets\favicon.png" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="CameraEx">
+			<HintPath>Libs\CameraEx.dll</HintPath>
+			<Private>true</Private>
+		</Reference>
+		<Reference Include="halcondotnet">
+		  <HintPath>E:\HALCON-23.05-Progress\bin\dotnet20\halcondotnet.dll</HintPath>
+		</Reference>
+		<Reference Include="hdevenginedotnet">
+		  <HintPath>E:\HALCON-23.05-Progress\bin\dotnet20\hdevenginedotnet.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Include="Libs\**\*.*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<TargetPath>%(Filename)%(Extension)</TargetPath>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="ClosedXML" Version="0.105.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Resource Include="Assets\favicon.png">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</Resource>
+	</ItemGroup>
+	
+</Project>

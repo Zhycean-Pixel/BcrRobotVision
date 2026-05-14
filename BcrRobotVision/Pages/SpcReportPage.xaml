@@ -1,0 +1,130 @@
+﻿<UserControl x:Class="BcrRobotVision.Pages.SpcReportPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource BgMain}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="120"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="230"/>
+        </Grid.RowDefinitions>
+
+        <!-- 顶部统计 -->
+        <Border Grid.Row="0"
+                Style="{StaticResource IndustrialCardStyle}"
+                Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="120"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="样本数" Style="{StaticResource LabelTextStyle}"/>
+                    <TextBlock x:Name="txtCount" Text="0" Foreground="White" FontSize="28" FontWeight="Bold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="平均值 Mean" Style="{StaticResource LabelTextStyle}"/>
+                    <TextBlock x:Name="txtMean" Text="0.000" Foreground="White" FontSize="26" FontWeight="Bold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="标准差 Sigma" Style="{StaticResource LabelTextStyle}"/>
+                    <TextBlock x:Name="txtSigma" Text="0.000" Foreground="White" FontSize="26" FontWeight="Bold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="3">
+                    <TextBlock Text="CP" Style="{StaticResource LabelTextStyle}"/>
+                    <TextBlock x:Name="txtCp" Text="0.000" Foreground="{StaticResource AccentBlue}" FontSize="26" FontWeight="Bold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="4">
+                    <TextBlock Text="CPK" Style="{StaticResource LabelTextStyle}"/>
+                    <TextBlock x:Name="txtCpk" Text="0.000" Foreground="{StaticResource AccentBlue}" FontSize="26" FontWeight="Bold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="5">
+                    <TextBlock Text="USL" Style="{StaticResource LabelTextStyle}"/>
+                    <TextBlock x:Name="txtUsl" Text="0.000" Foreground="OrangeRed" FontSize="24" FontWeight="Bold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="6">
+                    <TextBlock Text="LSL" Style="{StaticResource LabelTextStyle}"/>
+                    <TextBlock x:Name="txtLsl" Text="0.000" Foreground="Orange" FontSize="24" FontWeight="Bold"/>
+                </StackPanel>
+
+                <Button Grid.Column="7"
+                        Content="刷新"
+                        Width="100"
+                        Height="40"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        VerticalAlignment="Center"
+                        Click="BtnRefresh_Click"/>
+            </Grid>
+        </Border>
+
+        <!-- SPC控制图 -->
+        <Border Grid.Row="1"
+                Style="{StaticResource IndustrialCardStyle}"
+                Margin="0,0,0,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="SPC 控制图 / 检测值趋势"
+                           Style="{StaticResource SectionTitleStyle}"/>
+
+                <Canvas x:Name="spcCanvas"
+                        Grid.Row="1"
+                        Background="#050B12"
+                        SizeChanged="SpcCanvas_SizeChanged"/>
+            </Grid>
+        </Border>
+
+        <!-- CPK报告说明 -->
+        <Border Grid.Row="2"
+                Style="{StaticResource IndustrialCardStyle}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="320"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="CPK判定"
+                               Style="{StaticResource SectionTitleStyle}"/>
+
+                    <TextBlock x:Name="txtCpkJudge"
+                               Text="暂无数据"
+                               FontSize="30"
+                               FontWeight="Bold"
+                               Foreground="Gray"
+                               Margin="0,10,0,0"/>
+
+                    <TextBlock Text="一般建议：CPK ≥ 1.33 合格；CPK ≥ 1.67 优秀"
+                               Foreground="{StaticResource TextSub}"
+                               FontSize="14"
+                               TextWrapping="Wrap"
+                               Margin="0,18,0,0"/>
+                </StackPanel>
+
+                <TextBlock x:Name="txtReport"
+                           Grid.Column="1"
+                           Foreground="{StaticResource TextMain}"
+                           FontSize="15"
+                           TextWrapping="Wrap"
+                           LineHeight="28"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
