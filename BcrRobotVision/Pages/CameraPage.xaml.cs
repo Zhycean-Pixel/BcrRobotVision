@@ -64,6 +64,9 @@ namespace BcrRobotVision.Pages
         private const int ExpectedImageWidth = 704;
         private const int ExpectedImageHeight = 320;
         private bool _lastPhoto1Signal = false;
+        private bool _lastPhotoStopSignal = false;
+        private bool _waitForStopSignal = false;
+        private bool _isStopCaptureRequested = false;
 
         private readonly SemaphoreSlim _autoPhotoLock = new SemaphoreSlim(1, 1);
 
@@ -416,6 +419,7 @@ namespace BcrRobotVision.Pages
                 }
 
                 _lastPhoto1Signal = false;
+                _lastPhotoStopSignal = false;
                 string todayFolder = Path.Combine(
                _imageRootFolder,
                 DateTime.Now.ToString("yyyyMMdd"));
@@ -436,7 +440,7 @@ namespace BcrRobotVision.Pages
                 txtAutoPlcState.Text = "PLC自动：高速监听中";
                 txtAutoPlcState.Foreground = Brushes.LimeGreen;
 
-                AppendLog("PLC自动监听已启动，50ms读取一次拍照信号 01x80");
+                AppendLog("PLC自动监听已启动，50ms读取拍照开始01x80 / 停止01x82");
             }
             catch (Exception ex)
             {
@@ -453,25 +457,33 @@ namespace BcrRobotVision.Pages
             {
                 try
                 {
-                    // 单次拍照模式：
-                    bool[] signals = _autoPlcService.ReadCoils(Material1StartAddress, 1);
+                    // 3D相机持续拍照模式：01x80开始，01x82停止。
+                    bool[] signals = _autoPlcService.ReadCoils(Material1StartAddress, 3);
 
-                    bool photo1Signal = signals.Length > 0 && signals[0];
+                    bool startSignal = signals.Length > 0 && signals[0];
+                    bool stopSignal = signals.Length > 2 && signals[2];
 
-                    if (photo1Signal != _lastPhoto1Signal)
+                    if (startSignal != _lastPhoto1Signal ||
+                        stopSignal != _lastPhotoStopSignal)
                     {
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            AppendLog($"PLC单次拍照信号变化：01x80={photo1Signal}");
+                            AppendLog($"PLC拍照信号变化：开始01x80={startSignal}，停止01x82={stopSignal}");
                         }));
                     }
 
-                    if (photo1Signal && !_lastPhoto1Signal)
+                    if (startSignal && !_lastPhoto1Signal)
                     {
-                        StartAutoPhotoFromPlc(1);
+                        StartMaterialCaptureFromPlc(1);
                     }
 
-                    _lastPhoto1Signal = photo1Signal;
+                    if (stopSignal && !_lastPhotoStopSignal)
+                    {
+                        StopMaterialCaptureFromPlc(1);
+                    }
+
+                    _lastPhoto1Signal = startSignal;
+                    _lastPhotoStopSignal = stopSignal;
 
                     if ((DateTime.Now - lastStateUpdateTime).TotalSeconds >= 1)
                     {
@@ -480,7 +492,7 @@ namespace BcrRobotVision.Pages
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
                             txtAutoPlcState.Text =
-                                $"PLC自动：监听中  01x80={photo1Signal}";
+                                $"PLC自动：监听中  开始01x80={startSignal}  停止01x82={stopSignal}";
 
                             txtAutoPlcState.Foreground = Brushes.LimeGreen;
                         }));
@@ -520,6 +532,8 @@ namespace BcrRobotVision.Pages
                         AppendLog($"物料{_activeMaterialNo}超时未结束，自动复位，允许新的物料{materialNo}开始");
                         _activeMaterialNo = 0;
                         _grabWaiter = null;
+                        _waitForStopSignal = false;
+                        _isStopCaptureRequested = false;
                     }
                     else
                     {
@@ -545,18 +559,22 @@ namespace BcrRobotVision.Pages
 
                 _grabWaiter = new TaskCompletionSource<CameraFrameSnapshot>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
+                _waitForStopSignal = true;
+                _isStopCaptureRequested = false;
 
-                bool triggerOk = _cameraWrap.SendGrabSignalToCamera();
+                bool triggerOk = _cameraWrap.SendGrabSignalToCamera(false);
 
                 if (!triggerOk)
                 {
                     AppendLog($"物料{materialNo}发送抓图触发失败");
                     _activeMaterialNo = 0;
                     _grabWaiter = null;
+                    _waitForStopSignal = false;
+                    _isStopCaptureRequested = false;
                     return;
                 }
 
-                AppendLog($"物料{materialNo}已发送抓图触发，等待完整3D图 {ExpectedImageWidth}×{ExpectedImageHeight}");
+                AppendLog($"物料{materialNo}已发送开始抓图信号，等待PLC停止信号01x82");
             }));
         }
 
@@ -585,10 +603,35 @@ namespace BcrRobotVision.Pages
                 {
                     AppendLog($"物料{materialNo}停止失败：没有等待中的图像任务");
                     _activeMaterialNo = 0;
+                    _waitForStopSignal = false;
+                    _isStopCaptureRequested = false;
                     return;
                 }
 
-                AppendLog($"物料{materialNo}停止信号已收到，等待完整图像回调");
+                if (_cameraWrap == null)
+                {
+                    AppendLog($"物料{materialNo}停止失败：相机对象为空");
+                    _grabWaiter = null;
+                    _activeMaterialNo = 0;
+                    _waitForStopSignal = false;
+                    _isStopCaptureRequested = false;
+                    return;
+                }
+
+                _isStopCaptureRequested = true;
+
+                bool stopOk = _cameraWrap.SendGrabSignalToCamera(true);
+                if (!stopOk)
+                {
+                    AppendLog($"物料{materialNo}发送停止抓图信号失败");
+                    _grabWaiter = null;
+                    _activeMaterialNo = 0;
+                    _waitForStopSignal = false;
+                    _isStopCaptureRequested = false;
+                    return;
+                }
+
+                AppendLog($"物料{materialNo}停止信号已收到，已发送结束抓图信号，等待完整图像回调");
 
                 Task completedTask = await Task.WhenAny(_grabWaiter.Task, Task.Delay(5000));
 
@@ -597,6 +640,8 @@ namespace BcrRobotVision.Pages
                     AppendLog($"物料{materialNo}等待完整3D图超时");
                     _grabWaiter = null;
                     _activeMaterialNo = 0;
+                    _waitForStopSignal = false;
+                    _isStopCaptureRequested = false;
                     return;
                 }
 
@@ -604,6 +649,8 @@ namespace BcrRobotVision.Pages
 
                 _grabWaiter = null;
                 _activeMaterialNo = 0;
+                _waitForStopSignal = false;
+                _isStopCaptureRequested = false;
 
                 await ProcessMaterialSnapshotAsync(materialNo, snapshot);
             }
@@ -611,6 +658,10 @@ namespace BcrRobotVision.Pages
             {
                 AppendLog($"物料{materialNo}停止处理异常：{ex.Message}");
                 MessageBox.Show($"物料{materialNo}停止处理异常：{ex.Message}");
+                _grabWaiter = null;
+                _activeMaterialNo = 0;
+                _waitForStopSignal = false;
+                _isStopCaptureRequested = false;
             }
             finally
             {
@@ -656,18 +707,22 @@ namespace BcrRobotVision.Pages
                     return;
                 }
 
+                if (chkEnableHalcon.IsChecked != true)
+                {
+                    ShowHalconDisabledResult();
+                    WriteOkToBothResultAddresses();
+                    AppendLog($"视觉算法未使能：已保存完整图片={currentImagePath}，PLC地址100/101已写入OK=1");
+                    return;
+                }
+
                 HalconInspectionResult halconResult = await Task.Run(() =>
                 {
-                    return ExecuteHalconAlgorithmFromCurrentImage();
+                    return ExecuteHalconAlgorithmFromImagePath(currentImagePath);
                 });
 
                 ShowHalconResult(halconResult);
 
-                ushort resultAddress = materialNo == 1
-                    ? Photo1ResultAddress
-                    : Photo2ResultAddress;
-
-                _autoPlcService.WriteSingleRegister(resultAddress, (short)halconResult.ResultCode);
+                WriteResultToBothAddresses((short)halconResult.ResultCode);
 
                 InspectionDataStore.AddRecord(
                     materialNo,
@@ -682,7 +737,7 @@ namespace BcrRobotVision.Pages
                     halconResult.ResultText,
                     currentImagePath);
 
-                AppendLog($"物料{materialNo}处理完成：{halconResult.ResultText}，PLC写入={halconResult.ResultCode}");
+                AppendLog($"物料{materialNo}处理完成：{halconResult.ResultText}，PLC地址100/101写入={halconResult.ResultCode}");
             }
             catch (Exception ex)
             {
@@ -938,6 +993,8 @@ namespace BcrRobotVision.Pages
 
             _grabWaiter = new TaskCompletionSource<CameraFrameSnapshot>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
+            _waitForStopSignal = false;
+            _isStopCaptureRequested = false;
 
             AppendLog("准备发送相机软件触发信号");
 
@@ -1082,10 +1139,10 @@ namespace BcrRobotVision.Pages
                     ? Photo1ResultAddress
                     : Photo2ResultAddress;
 
-                _autoPlcService.WriteSingleRegister(resultAddress, (short)halconResult.ResultCode);
+                WriteResultToBothAddresses((short)halconResult.ResultCode);
 
                 AppendLog(
-                    $"PLC结果写入完成：拍照{cameraNo}，地址={resultAddress}，结果={(halconResult.ResultCode == 1 ? "OK=1" : "NG=2")}");
+                    $"PLC结果写入完成：拍照{cameraNo}，地址100/101，结果={(halconResult.ResultCode == 1 ? "OK=1" : "NG=2")}");
 
                 // 7. 写入报表和CPK数据
                 InspectionDataStore.AddRecord(
@@ -1117,8 +1174,13 @@ namespace BcrRobotVision.Pages
 
         private void WriteOkToBothResultAddresses()
         {
-            _autoPlcService.WriteSingleRegister(Photo1ResultAddress, 1);
-            _autoPlcService.WriteSingleRegister(Photo2ResultAddress, 1);
+            WriteResultToBothAddresses(1);
+        }
+
+        private void WriteResultToBothAddresses(short resultCode)
+        {
+            _autoPlcService.WriteSingleRegister(Photo1ResultAddress, resultCode);
+            _autoPlcService.WriteSingleRegister(Photo2ResultAddress, resultCode);
         }
 
         private void ShowHalconDisabledResult()
@@ -1540,7 +1602,13 @@ namespace BcrRobotVision.Pages
                 _hasFreshImage = true;
                 if (_grabWaiter != null)
                 {
-                    if (_latestHeight >= ExpectedImageHeight)
+                    bool canCompleteGrab = !_waitForStopSignal || _isStopCaptureRequested;
+
+                    if (!canCompleteGrab)
+                    {
+                        AppendLog($"持续采集中，暂不完成图像：{_latestWidth}×{_latestHeight}，等待PLC停止信号01x82");
+                    }
+                    else if (_latestHeight >= ExpectedImageHeight)
                     {
                         int actualWidth = _latestWidth;
                         int actualHeight = ExpectedImageHeight;
