@@ -62,7 +62,7 @@ namespace BcrRobotVision.Pages
         private CancellationTokenSource? _plcListenCts;
 
         private const int ExpectedImageWidth = 704;
-        private const int ExpectedImageHeight = 320;
+        private const int FallbackExpectedImageHeight = 320;
         private bool _lastPhoto1Signal = false;
 
         private readonly SemaphoreSlim _autoPhotoLock = new SemaphoreSlim(1, 1);
@@ -643,9 +643,9 @@ namespace BcrRobotVision.Pages
             {
                 AppendLog($"物料{materialNo}取图成功：{snapshot.Width}×{snapshot.Height}");
 
-                if (snapshot.Height != ExpectedImageHeight)
+                if (snapshot.Height <= 0)
                 {
-                    AppendLog($"物料{materialNo}图像高度异常：当前={snapshot.Width}×{snapshot.Height}，目标高度={ExpectedImageHeight}");
+                    AppendLog($"物料{materialNo}图像高度异常：当前={snapshot.Width}×{snapshot.Height}");
                     return;
                 }
 
@@ -1204,12 +1204,6 @@ namespace BcrRobotVision.Pages
                     return ;
                 }
 
-                if (!_cameraWrap.SetBatchGrabNumber(ExpectedImageHeight))
-                {
-                    MessageBox.Show("设置抓取线数320失败");
-                    return ;
-                }
-
                 if (!_cameraWrap.StartCapture())
                 {
                     MessageBox.Show("开始采集失败", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -1568,10 +1562,12 @@ namespace BcrRobotVision.Pages
                 _hasFreshImage = true;
                 if (_grabWaiter != null)
                 {
-                    if (_latestHeight >= ExpectedImageHeight)
+                    int targetHeight = GetTargetCaptureHeight(param);
+
+                    if (_latestHeight >= targetHeight)
                     {
                         int actualWidth = _latestWidth;
-                        int actualHeight = ExpectedImageHeight;
+                        int actualHeight = _latestHeight;
 
                         int targetCount = actualWidth * actualHeight;
                         float[] fixedZValues = new float[targetCount];
@@ -1595,7 +1591,7 @@ namespace BcrRobotVision.Pages
                     }
                     else
                     {
-                        AppendLog($"收到非完整图，暂不处理：{_latestWidth}×{_latestHeight}，目标高度={ExpectedImageHeight}");
+                        AppendLog($"收到非完整图，暂不处理：{_latestWidth}×{_latestHeight}，目标高度={targetHeight}");
                     }
                 }
 
@@ -1628,6 +1624,13 @@ namespace BcrRobotVision.Pages
                 txtPointCloudInfo.Text =
                     $"三维点云：点数 {showPointCount}，X间距 {param._fXSpace:F6}，Y间距 {param._fYSpace:F6}";
             }));
+        }
+
+        private int GetTargetCaptureHeight(SG_DEPTHDATA_PARAM param)
+        {
+            return param._iWantCaptureProfileLineNum > 0
+                ? param._iWantCaptureProfileLineNum
+                : FallbackExpectedImageHeight;
         }
 
         private void TimerUpdatePointCloud_Tick(object? sender, EventArgs e)
